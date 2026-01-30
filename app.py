@@ -1,23 +1,16 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse
-import tempfile
 import pandas as pd
-from reconcile_core import reconcile
+import tempfile
 import os
+import zipfile
+
+from reconcile_core import reconcile
 
 app = FastAPI(title="GeM Payment Reconciliation")
 
-# @app.get("/", response_class=HTMLResponse)
-# def home():
-#     return """
-#     <h2>GeM Payment Reconciliation</h2>
-#     <form action="/reconcile" method="post" enctype="multipart/form-data">
-#       Invoice File: <input type="file" name="invoice"><br><br>
-#       Payment File: <input type="file" name="payment"><br><br>
-#       <button type="submit">Reconcile</button>
-#     </form>
-#     """
 
+# ---------------- HOME PAGE ----------------
 @app.get("/", response_class=HTMLResponse)
 def home():
     return """
@@ -75,3 +68,48 @@ def home():
     </html>
     """
 
+
+# ---------------- RECONCILE API ----------------
+@app.post("/reconcile")
+async def reconcile_api(
+    invoice_file: UploadFile = File(...),
+    payment_file: UploadFile = File(...)
+):
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        # ---- SAVE UPLOADED FILES ----
+        invoice_path = os.path.join(tmpdir, "gem_invoices.xlsx")
+        payment_path = os.path.join(tmpdir, "payments.xlsx")
+
+        with open(invoice_path, "wb") as f:
+            f.write(await invoice_file.read())
+
+        with open(payment_path, "wb") as f:
+            f.write(await payment_file.read())
+
+        # ---- READ EXCEL FILES ----
+        invoice_df = pd.read_excel(invoice_path)
+        payment_df = pd.read_excel(payment_path)
+
+        # ---- CORE RECONCILIATION ----
+        matched_df, unmatched_df = reconcile(invoice_df, payment_df)
+
+        # ---- CREATE ZIP RESULT ----
+        zip_path = os.path.join(tmpdir, "gem_reconciliation_result.zip")
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+
+            matched_path = os.path.join(tmpdir, "matched_invoices.xlsx")
+            matched_df.to_excel(matched_path, index=False)
+            zipf.write(matched_path, "matched_invoices.xlsx")
+
+            unmatched_path = os.path.join(tmpdir, "unmatched_invoices.xlsx")
+            unmatched_df.to_excel(unmatched_path, index=False)
+            zipf.write(unmatched_path, "unmatched_invoices.xlsx")
+
+        # ---- DOWNLOAD ZIP ----
+        return FileResponse(
+            zip_path,
+            media_type="application/zip",
+            filename="gem_reconciliation_result.zip"
+        )

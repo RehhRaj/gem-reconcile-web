@@ -1,22 +1,16 @@
-# reconcile_core.py
 import pandas as pd
 
 
 def reconcile(invoice_df: pd.DataFrame, payment_df: pd.DataFrame):
     """
     Core reconciliation logic (SAFE BASE VERSION)
-
-    Returns:
-        matched_df   : invoices considered paid
-        unmatched_df : invoices not matched with any payment
     """
 
     # ---- NORMALIZE COLUMN NAMES ----
     invoice_df.columns = [c.strip().upper() for c in invoice_df.columns]
     payment_df.columns = [c.strip().upper() for c in payment_df.columns]
 
-    # ---- IDENTIFY AMOUNT COLUMN (GeM) ----
-    # Paid Amount is safest in your file
+    # ---- FIND AMOUNT COLUMN ----
     amount_col = None
     for c in ["PAID AMOUNT", "CRAC AMOUNT", "INVOICE AMOUNT"]:
         if c in invoice_df.columns:
@@ -24,10 +18,9 @@ def reconcile(invoice_df: pd.DataFrame, payment_df: pd.DataFrame):
             break
 
     if amount_col is None:
-        raise ValueError("No invoice amount column found in invoice file")
+        raise ValueError("No invoice amount column found")
 
     # ---- BASIC DEMO LOGIC ----
-    # Mark invoices as matched if amount <= max payment amount
     max_payment = payment_df["BILLAMOUNT"].max()
 
     matched_df = invoice_df[invoice_df[amount_col] <= max_payment].copy()

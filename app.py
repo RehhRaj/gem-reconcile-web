@@ -5,6 +5,8 @@ import tempfile
 import os
 import zipfile
 
+
+
 from reconcile_core import reconcile
 
 app = FastAPI(title="GeM Payment Reconciliation")
@@ -70,14 +72,21 @@ def home():
 
 
 # ---------------- RECONCILE API ----------------
-@app.post("/reconcile")
-async def reconcile_api(
-    invoice_file: UploadFile = File(...),
-    payment_file: UploadFile = File(...)
-):
-    with tempfile.TemporaryDirectory() as tmpdir:
 
-        # ---- SAVE UPLOADED FILES ----
+
+
+import tempfile
+import os
+import zipfile
+from fastapi.responses import FileResponse
+
+@app.post("/reconcile")
+async def reconcile_api(invoice_file: UploadFile = File(...), payment_file: UploadFile = File(...)):
+
+    # ---- CREATE A TEMP DIR ----
+    tmpdir = tempfile.mkdtemp()  # NOT using 'with' so it won't auto-delete
+
+    try:
         invoice_path = os.path.join(tmpdir, "gem_invoices.xlsx")
         payment_path = os.path.join(tmpdir, "payments.xlsx")
 
@@ -91,14 +100,12 @@ async def reconcile_api(
         invoice_df = pd.read_excel(invoice_path)
         payment_df = pd.read_excel(payment_path)
 
-        # ---- CORE RECONCILIATION ----
+        # ---- RECONCILE ----
         matched_df, unmatched_df = reconcile(invoice_df, payment_df)
 
-        # ---- CREATE ZIP RESULT ----
+        # ---- CREATE ZIP ----
         zip_path = os.path.join(tmpdir, "gem_reconciliation_result.zip")
-
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-
             matched_path = os.path.join(tmpdir, "matched_invoices.xlsx")
             matched_df.to_excel(matched_path, index=False)
             zipf.write(matched_path, "matched_invoices.xlsx")
@@ -107,9 +114,13 @@ async def reconcile_api(
             unmatched_df.to_excel(unmatched_path, index=False)
             zipf.write(unmatched_path, "unmatched_invoices.xlsx")
 
-        # ---- DOWNLOAD ZIP ----
-        return FileResponse(
-            zip_path,
-            media_type="application/zip",
-            filename="gem_reconciliation_result.zip"
-        )
+        # ---- RETURN FILE ----
+        return FileResponse(zip_path, media_type="application/zip", filename="gem_reconciliation_result.zip")
+
+    finally:
+        # Clean up files manually after sending
+        import shutil
+        shutil.rmtree(tmpdir)
+
+
+

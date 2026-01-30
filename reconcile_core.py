@@ -1,48 +1,39 @@
-from fastapi import UploadFile, File
-from fastapi.responses import FileResponse
+# reconcile_core.py
 import pandas as pd
-import tempfile
-import os
-import zipfile
 
-@app.post("/reconcile")
-async def reconcile(
-    invoice_file: UploadFile = File(...),
-    payment_file: UploadFile = File(...)
-):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        invoice_path = os.path.join(tmpdir, "gem_invoices.xlsx")
-        payment_path = os.path.join(tmpdir, "payments.xlsx")
 
-        with open(invoice_path, "wb") as f:
-            f.write(await invoice_file.read())
+def reconcile(invoice_df: pd.DataFrame, payment_df: pd.DataFrame):
+    """
+    Core reconciliation logic (SAFE BASE VERSION)
 
-        with open(payment_path, "wb") as f:
-            f.write(await payment_file.read())
+    Returns:
+        matched_df   : invoices considered paid
+        unmatched_df : invoices not matched with any payment
+    """
 
-        # READ FILES
-        invoice_df = pd.read_excel(invoice_path)
-        payment_df = pd.read_excel(payment_path)
+    # ---- NORMALIZE COLUMN NAMES ----
+    invoice_df.columns = [c.strip().upper() for c in invoice_df.columns]
+    payment_df.columns = [c.strip().upper() for c in payment_df.columns]
 
-        # ---- YOUR RECONCILIATION LOGIC HERE ----
-        matched_df = invoice_df.head(10)        # example
-        unmatched_df = invoice_df.tail(10)      # example
+    # ---- IDENTIFY AMOUNT COLUMN (GeM) ----
+    # Paid Amount is safest in your file
+    amount_col = None
+    for c in ["PAID AMOUNT", "CRAC AMOUNT", "INVOICE AMOUNT"]:
+        if c in invoice_df.columns:
+            amount_col = c
+            break
 
-        zip_path = os.path.join(tmpdir, "reconciliation_result.zip")
+    if amount_col is None:
+        raise ValueError("No invoice amount column found in invoice file")
 
-        with zipfile.ZipFile(zip_path, "w") as zipf:
-            if not matched_df.empty:
-                matched_file = os.path.join(tmpdir, "matched_invoices.xlsx")
-                matched_df.to_excel(matched_file, index=False)
-                zipf.write(matched_file, "matched_invoices.xlsx")
+    # ---- BASIC DEMO LOGIC ----
+    # Mark invoices as matched if amount <= max payment amount
+    max_payment = payment_df["BILLAMOUNT"].max()
 
-            if not unmatched_df.empty:
-                unmatched_file = os.path.join(tmpdir, "unmatched_invoices.xlsx")
-                unmatched_df.to_excel(unmatched_file, index=False)
-                zipf.write(unmatched_file, "unmatched_invoices.xlsx")
+    matched_df = invoice_df[invoice_df[amount_col] <= max_payment].copy()
+    unmatched_df = invoice_df[invoice_df[amount_col] > max_payment].copy()
 
-        return FileResponse(
-            zip_path,
-            media_type="application/zip",
-            filename="gem_reconciliation_result.zip"
-        )
+    matched_df["MATCH_TYPE"] = "AUTO_SIMPLE"
+    unmatched_df["MATCH_TYPE"] = "UNMATCHED"
+
+    return matched_df, unmatched_df

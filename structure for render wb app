@@ -1,0 +1,10 @@
+
+
+📁 PROJECT STRUCTURE (Render friendly)
+gem-recon-web/
+│
+├── app.py                ← FastAPI entry
+├── reconcile_core.py     ← your logic (moved here)
+├── requirements.txt
+├── render.yaml           ← optional (recommended)
+└── README.md
